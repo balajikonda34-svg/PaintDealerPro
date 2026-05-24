@@ -23,10 +23,10 @@ export const parsePdfAndStore = async (file: File, brand: string = 'Asian Paints
 
       for (const item of textContent.items) {
         if ('str' in item && 'transform' in item) {
-          const text = item.str.trim();
+          const text = (item as any).str.trim();
           if (!text) continue;
 
-          const y = item.transform[5];
+          const y = (item as any).transform[5];
           const foundRowY = Object.keys(rows).find(ry => Math.abs(parseFloat(ry) - y) < MARGIN_OF_ERROR);
           
           if (foundRowY) {
@@ -42,22 +42,54 @@ export const parsePdfAndStore = async (file: File, brand: string = 'Asian Paints
       for (const y of sortedY) {
         const rowItems = rows[y];
         
-        if (rowItems.length >= 3) {
+        if (rowItems.length >= 2) {
            const code = rowItems[0];
-           const possibleName = rowItems.length > 4 ? rowItems[1] : '';
            
-           if (possibleName && possibleName.length > 2 && !possibleName.match(/^[0-9LmlKg]+$/i)) {
+           if (rowItems.length === 2 && code.match(/^[0-9]+$/)) {
+               currentProductName = rowItems[1];
+               continue; 
+           }
+           
+           if (rowItems.length === 2 && rowItems[1].match(/[A-Za-z\(\)]+/)) {
+               currentProductName = rowItems[1];
+           }
+
+           let possibleName = '';
+           if (rowItems.length >= 5) {
+               if (!rowItems[1].match(/^[0-9\.]+$/)) {
+                   possibleName = rowItems[1];
+               }
+           }
+           
+           if (possibleName && possibleName.length > 2) {
                currentProductName = possibleName;
            }
 
-           const dplStr = rowItems.find(i => i.match(/^[0-9,]+(\.[0-9]{1,2})?$/));
+           const lastItem = rowItems[rowItems.length - 1];
+           const dplStr = lastItem.match(/^[0-9,]+(\.[0-9]{1,2})?$/) ? lastItem : null;
            const dpl = dplStr ? parseFloat(dplStr.replace(/,/g, '')) : 0;
 
-           const size = rowItems.find(i => i.match(/[0-9]+[ ]*(L|ml|Kg|ltr)/i)) || '1L';
+           let sizeNumStr = rowItems.find(i => i.match(/^[0-9]+\.[0-9]+$/));
+           let size = sizeNumStr ? sizeNumStr + "L/Kg" : '1L';
+           
+           if (sizeNumStr) {
+               let n = parseFloat(sizeNumStr);
+               if (n < 1) {
+                   size = (n * 1000).toFixed(0) + "ml";
+               } else {
+                   size = n.toFixed(0) + "L/Kg";
+               }
+           }
 
-           const base = rowItems.find(i => i.match(/Base/i)) || 'Base 1';
+           let base = 'Base/White';
+           if (rowItems.length >= 6) {
+               base = rowItems[2];
+               if (base.match(/^[0-9\.]+$/)) base = 'Base/White';
+           } else if (currentProductName && currentProductName !== 'ASIAN PAINTS APCOLITE PREMIUM GLOSS ENAMEL (W)' && currentProductName !== 'ASIAN PAINTS APCOLITE PREMIUM GLOSS ENAMEL (C)') {
+               if(currentProductName.length < 20) base = currentProductName;
+           }
 
-           if (dpl > 0) {
+           if (dpl > 0 && code.match(/^[0-9]+$/)) {
              productsToAdd.push({
                productCode: code,
                productName: currentProductName || 'Unknown Product',
