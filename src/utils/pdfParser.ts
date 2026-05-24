@@ -86,7 +86,7 @@ export const parsePdfAndStore = async (file: File, brand: string = 'Asian Paints
         if (!gr[k]) gr[k] = { c: c, g: g, ns: [], sz: {} };
         if (vn) gr[k].ns.push(vn);
         let sk = sz.toFixed(3);
-        if (!gr[k].sz[sk]) gr[k].sz[sk] = pr;
+        if (!gr[k].sz[sk] || pr > gr[k].sz[sk]) gr[k].sz[sk] = pr;
         continue;
       }
 
@@ -100,42 +100,58 @@ export const parsePdfAndStore = async (file: File, brand: string = 'Asian Paints
 
         if (!gr[k]) gr[k] = { c: c, g: g, ns: [], sz: {} };
         let sk = sz.toFixed(3);
-        if (!gr[k].sz[sk]) gr[k].sz[sk] = pr;
+        if (!gr[k].sz[sk] || pr > gr[k].sz[sk]) gr[k].sz[sk] = pr;
       }
     }
 
-    let productsToAdd: Product[] = [];
+    let out: any = {};
     let gkeys = Object.keys(gr);
-    const now = new Date();
-
     for (let gi = 0; gi < gkeys.length; gi++) {
       let gg = gr[gkeys[gi]], cc = gg.c;
-      let productName = nm[cc] || ('Product ' + cc);
-      
-      let uns: string[] = [];
+      if (!out[cc]) out[cc] = { name: nm[cc] || ('Product ' + cc), groups: {} };
+      let sizes = [];
+      let szks = Object.keys(gg.sz);
+      for (let si = 0; si < szks.length; si++) sizes.push({ size: parseFloat(szks[si]), price: gg.sz[szks[si]] });
+      sizes.sort((a, b) => a.size - b.size);
+      let uns = [];
       for (let ni = 0; ni < gg.ns.length; ni++) { if (gg.ns[ni] && uns.indexOf(gg.ns[ni]) < 0) uns.push(gg.ns[ni]); }
       uns.sort((a, b) => b.length - a.length);
-      let base = uns[0] ? uns[0].substring(0, 60) : 'Standard';
+      
+      out[cc].groups[String(gg.g)] = { name: uns[0] ? uns[0].substring(0, 60) : 'Standard', sizes: sizes };
+    }
 
-      let szks = Object.keys(gg.sz);
-      for (let si = 0; si < szks.length; si++) {
-        let sizeNum = parseFloat(szks[si]);
-        let dpl = gg.sz[szks[si]];
-        let sizeStr = sizeNum < 1 ? (sizeNum * 1000).toFixed(0) + "ml/gm" : sizeNum.toFixed(0) + "L/Kg";
+    let productsToAdd: Product[] = [];
+    let now = new Date();
+    let ckeys = Object.keys(out);
+    for (let ci = 0; ci < ckeys.length; ci++) {
+        let cc = ckeys[ci];
+        let p = out[cc];
+        let gKeysInner = Object.keys(p.groups);
         
-        productsToAdd.push({
-            productCode: cc + "-" + String(gg.g),
-            productName: productName,
-            brand: brand,
-            category: category,
-            skuSize: sizeStr,
-            base: base,
-            dpl: dpl,
-            colorantCost: 0,
-            gstPercent: 18,
-            lastUpdated: now
-        });
-      }
+        for(let gi = 0; gi < gKeysInner.length; gi++) {
+            let gid = gKeysInner[gi];
+            let g = p.groups[gid];
+            let base = g.name;
+            
+            for (let si = 0; si < g.sizes.length; si++) {
+                let sku = g.sizes[si];
+                let sizeNum = sku.size;
+                let sizeStr = sizeNum < 1 ? (sizeNum * 1000).toFixed(0) + "ml/gm" : sizeNum.toFixed(0) + "L/Kg";
+                
+                productsToAdd.push({
+                    productCode: cc + "-" + gid,
+                    productName: p.name,
+                    brand: brand,
+                    category: category,
+                    skuSize: sizeStr,
+                    base: base,
+                    dpl: sku.price, 
+                    colorantCost: 0,
+                    gstPercent: 18,
+                    lastUpdated: now
+                });
+            }
+        }
     }
 
     if (productsToAdd.length > 0) {
